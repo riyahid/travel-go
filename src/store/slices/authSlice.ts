@@ -40,7 +40,16 @@ export const signInWithEmail = createAsyncThunk(
             creationTime: new Date().toISOString(),
             lastSignInTime: new Date().toISOString(),
           },
-          providerData: [],
+          providerData: [
+            {
+              uid: 'test-admin-uid', // Typically matches the main uid for password auth
+              email: 'admin@travelgo.com',
+              displayName: 'Test Admin',
+              phoneNumber: null,
+              photoURL: null,
+              providerId: 'password', // Important: indicates email/password authentication
+            },
+          ],
           refreshToken: 'mock-refresh-token',
           tenantId: null,
           delete: async () => {},
