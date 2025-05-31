@@ -5,7 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert, // Added for potential error display, though not strictly in plan
 } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSelector } from 'react-redux';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -45,6 +47,14 @@ export default function TripDetailsScreen() {
     navigation.navigate('AddActivity', { tripId, date: trip.startDate });
   };
 
+  const { destination } = trip;
+  const { coordinates } = destination;
+  // A coordinate is considered valid if it's not (0,0) or if explicitly geocoded
+  // For simplicity, we'll assume any non-zero coordinate is potentially valid.
+  // A more robust check might involve a flag like `isGeocoded` if (0,0) can be a real place.
+  const hasValidCoordinates = coordinates && (coordinates.latitude !== 0 || coordinates.longitude !== 0);
+
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -63,11 +73,39 @@ export default function TripDetailsScreen() {
       <Card variant="outlined" style={styles.section}>
         <View style={styles.sectionHeader}>
           <Icon name="map-marker" size={24} color="#212529" />
-          <Text style={styles.sectionTitle}>Destination</Text>
+          <Text style={styles.sectionTitleText}>Destination</Text>
         </View>
         <Text style={styles.destinationText}>
           {trip.destination.name}, {trip.destination.country}
         </Text>
+
+        {/* Map Integration */}
+        {hasValidCoordinates ? (
+          <View style={styles.mapContainer}>
+            <MapView
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              initialRegion={{
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                latitudeDelta: 0.0922,
+                longitudeDelta: 0.0421,
+              }}
+              scrollEnabled={false}
+              zoomEnabled={false}
+            >
+              <Marker
+                coordinate={coordinates}
+                title={destination.name}
+                description={destination.country}
+              />
+            </MapView>
+          </View>
+        ) : (
+          <View style={styles.mapContainer}>
+            <Text style={styles.noMapText}>Map data is unavailable for this destination.</Text>
+          </View>
+        )}
       </Card>
 
       {trip.description && (
@@ -159,7 +197,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  sectionTitle: {
+  sectionTitleText: { // Renamed for clarity from potential future sectionTitle style for map
     fontSize: 18,
     fontWeight: '600',
     color: '#212529',
@@ -222,4 +260,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 24,
   },
+  mapContainer: {
+    marginTop: 16,
+    borderRadius: 8,
+    overflow: 'hidden', // Ensures map corners are rounded if map itself doesn't support borderRadius directly
+  },
+  map: {
+    height: 200,
+    width: '100%',
+  },
+  noMapText: {
+    fontSize: 14,
+    color: '#6c757d',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontStyle: 'italic',
+  }
 }); 

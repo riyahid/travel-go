@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { db, storage } from '../../config/firebase';
 import { collection, query, where, orderBy, getDocs, addDoc, doc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { JournalEntry, Photo } from '../../types';
+import { JournalEntry } from '../../types';
 
 interface JournalState {
   entries: JournalEntry[];
@@ -39,42 +39,52 @@ export const fetchJournalEntries = createAsyncThunk(
 
 export const createJournalEntry = createAsyncThunk(
   'journal/createEntry',
-  async ({ 
-    entry,
-    photos
-  }: { 
-    entry: Omit<JournalEntry, 'id' | 'photos' | 'createdAt' | 'updatedAt'>;
-    photos: { uri: string; fileName: string }[];
+  async ({
+    entryData,
+    photos: localPhotoUris, // Array of local image URIs
+  }: {
+    entryData: Omit<JournalEntry, 'id' | 'photos' | 'createdAt' | 'updatedAt'>;
+    localPhotoUris: string[];
   }) => {
     const now = new Date().toISOString();
-    const uploadedPhotos: Photo[] = [];
+    const uploadedPhotoUrls: string[] = [];
+    const { userId } = entryData; // Assuming userId is part of entryData
+
+    // Generate a new entry ID for photo path (optional, or upload after creation)
+    // For simplicity, we'll use a placeholder or a simpler path for now.
+    // A more robust solution might involve creating the doc, then uploading, then updating.
+    const tempEntryId = doc(collection(db, 'temp')).id; // Firestore generates IDs this way
 
     // Upload photos to Firebase Storage
-    for (const photo of photos) {
-      const reference = ref(storage, `journal_photos/${photo.fileName}`);
-      const file = await fetch(photo.uri).then(res => res.blob());
-      await uploadBytes(reference, file);
-      const url = await getDownloadURL(reference);
+    for (let i = 0; i < localPhotoUris.length; i++) {
+      const localUri = localPhotoUris[i];
+      const fileName = `photo_${Date.now()}_${i}.jpg`; // Create a unique filename
+      // Path: journals/{userId}/{entryId}/{filename}
+      // For now, entryId might not be available before creation.
+      // Using a temporary path or simplifying for now.
+      const photoRef = ref(storage, `journals/${userId}/${tempEntryId}/${fileName}`);
       
-      uploadedPhotos.push({
-        id: photo.fileName,
-        url,
-        takenAt: now,
-      });
+      const response = await fetch(localUri);
+      const blob = await response.blob();
+
+      await uploadBytes(photoRef, blob);
+      const downloadURL = await getDownloadURL(photoRef);
+      uploadedPhotoUrls.push(downloadURL);
     }
 
-    const entryData = {
-      ...entry,
-      photos: uploadedPhotos,
+    const finalEntryData = {
+      ...entryData,
+      photos: uploadedPhotoUrls,
+      createdAt: now,
       createdAt: now,
       updatedAt: now,
     };
 
-    const docRef = await addDoc(collection(db, 'journal_entries'), entryData);
+    const docRef = await addDoc(collection(db, 'journal_entries'), finalEntryData);
 
     return {
       id: docRef.id,
-      ...entryData,
+      ...finalEntryData,
     } as JournalEntry;
   }
 );
@@ -88,34 +98,46 @@ export const updateJournalEntry = createAsyncThunk(
   }: { 
     entryId: string;
     updates: Partial<JournalEntry>;
-    newPhotos?: { uri: string; fileName: string }[];
+    newPhotosUris?: string[]; // Array of new local image URIs
+    existingPhotos?: string[]; // Array of existing photo URLs to keep
   }) => {
     const updatedAt = new Date().toISOString();
-    let uploadedPhotos: Photo[] = [];
+    const newUploadedPhotoUrls: string[] = [];
+    const { userId } = updates; // Assuming userId will be part of updates or fetched from current entry
 
-    if (newPhotos && newPhotos.length > 0) {
-      // Upload new photos
-      for (const photo of newPhotos) {
-        const reference = ref(storage, `journal_photos/${photo.fileName}`);
-        const file = await fetch(photo.uri).then(res => res.blob());
-        await uploadBytes(reference, file);
-        const url = await getDownloadURL(reference);
+    // This part needs careful handling of existing photos, deleting removed ones, and uploading new ones.
+    // For this subtask, the focus is on createJournalEntry. We'll simplify update for now.
+    // A real implementation would:
+    // 1. Identify photos to delete from storage.
+    // 2. Upload new photos.
+    // 3. Combine existing kept photos with new URLs.
+
+    if (newPhotosUris && newPhotosUris.length > 0 && userId) {
+      for (let i = 0; i < newPhotosUris.length; i++) {
+        const localUri = newPhotosUris[i];
+        const fileName = `photo_${Date.now()}_${i}.jpg`;
+        const photoRef = ref(storage, `journals/${userId}/${entryId}/${fileName}`);
         
-        uploadedPhotos.push({
-          id: photo.fileName,
-          url,
-          takenAt: updatedAt,
-        });
+        const response = await fetch(localUri);
+        const blob = await response.blob();
+
+        await uploadBytes(photoRef, blob);
+        const downloadURL = await getDownloadURL(photoRef);
+        newUploadedPhotoUrls.push(downloadURL);
       }
     }
 
-    const updateData = {
+    const finalPhotos = [...(existingPhotos || []), ...newUploadedPhotoUrls];
+
+    const updateData: Partial<JournalEntry> = {
       ...updates,
+      photos: finalPhotos,
       updatedAt,
-      ...(uploadedPhotos.length > 0 && {
-        photos: [...(updates.photos || []), ...uploadedPhotos],
-      }),
     };
+
+    // Remove undefined fields from updateData to avoid overwriting with undefined in Firestore
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
 
     await updateDoc(doc(db, 'journal_entries', entryId), updateData);
 
@@ -129,18 +151,24 @@ export const updateJournalEntry = createAsyncThunk(
 export const deleteJournalEntry = createAsyncThunk(
   'journal/deleteEntry',
   async (entryId: string) => {
-    // Get the entry to delete photos
-    const entrySnapshot = await getDoc(doc(db, 'journal_entries', entryId));
-    
-    const entry = entrySnapshot.data() as JournalEntry;
+    const entryRef = doc(db, 'journal_entries', entryId);
+    const entrySnapshot = await getDoc(entryRef);
+    const entryData = entrySnapshot.data() as JournalEntry | undefined;
 
-    // Delete photos from storage
-    for (const photo of entry.photos) {
-      const reference = ref(storage, `journal_photos/${photo.id}`);
-      await deleteObject(reference);
+    if (entryData?.photos && entryData.photos.length > 0) {
+      // Delete photos from Firebase Storage
+      for (const photoUrl of entryData.photos) {
+        try {
+          const photoRef = ref(storage, photoUrl); // Construct ref from URL
+          await deleteObject(photoRef);
+        } catch (error) {
+          // Log error if a photo delete fails, but continue
+          console.error("Failed to delete photo from storage:", photoUrl, error);
+        }
+      }
     }
 
-    // Delete the entry document
+    // Delete the entry document from Firestore
     await deleteDoc(doc(db, 'journal_entries', entryId));
 
     return entryId;

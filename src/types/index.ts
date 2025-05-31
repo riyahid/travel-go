@@ -77,8 +77,16 @@ export interface Trip {
   endDate: string;
   destination: Destination;
   itinerary: ItineraryDay[];
-  budget: Budget;
+  budget: Budget; // For actual spending
   status: TripStatus;
+  preferences?: {
+    travelStyle?: string; // e.g., 'Solo', 'Couple', 'Family', 'Backpacking', 'Luxury'
+    interests?: string[]; // e.g., ['Adventure', 'Culture', 'Relaxation', 'Foodie']
+    budgetEstimate?: {
+      amount?: number;
+      currency?: string; // e.g., 'USD', 'EUR'
+    };
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -91,33 +99,37 @@ export interface Photo {
 
 export interface JournalEntry {
   id: string;
-  tripId: string;
+  tripId: string; // To associate with a trip
   userId: string;
+  date: string; // ISO date string
   title: string;
-  content: string;
-  location?: Location;
-  photos: Photo[];
-  mood?: string;
-  weather?: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
+  text: string;
+  photos?: string[]; // Array of photo URLs (from Firebase Storage)
+  location?: {
+    name: string; // Manual input for now
+    latitude?: number;
+    longitude?: number;
+  };
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
 }
 
-export interface FoodLog {
+export interface FoodLogEntry {
   id: string;
-  tripId: string;
+  tripId?: string; // Optional: to associate with a trip
   userId: string;
-  name: string;
-  description?: string;
-  restaurant?: string;
-  location: Location;
-  rating: number;
-  cost?: number;
-  photos: Photo[];
-  tags: string[];
-  date: string;
-  createdAt: string;
+  date: string; // ISO date string
+  mealDescription: string;
+  rating: number; // e.g., 1-5 stars
+  photos?: string[]; // Array of photo URLs (from Firebase Storage)
+  restaurantName?: string;
+  location?: { // Optional: for more precise location
+    name: string;
+    latitude?: number;
+    longitude?: number;
+  };
+  createdAt: string; // ISO date string
+  updatedAt: string; // ISO date string
 }
 
 export interface AuthState {
@@ -141,8 +153,8 @@ export interface JournalState {
 }
 
 export interface FoodLogState {
-  entries: FoodLog[];
-  currentEntry: FoodLog | null;
+  entries: FoodLogEntry[];
+  currentEntry: FoodLogEntry | null;
   loading: boolean;
   error: string | null;
 }
